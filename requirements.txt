@@ -1,7 +1,6 @@
 fastapi
 uvicorn
-transformers==4.40.1
-torch==2.2.2
+transformers
+torch
 pillow
-python-multipart
-numpy<2
+requests
