@@ -1,23 +1,22 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-from transformers import CLIPProcessor, CLIPModel
 from PIL import Image
+from transformers import CLIPProcessor, CLIPModel
 import torch
 import requests
-import io
+from io import BytesIO
 
 app = FastAPI()
 
 model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
 processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 
-class Input(BaseModel):
+class ImageInput(BaseModel):
     image_url: str
 
-@app.post("/")
-async def embed_image(input: Input):
-    image_data = requests.get(input.image_url).content
-    image = Image.open(io.BytesIO(image_data)).convert("RGB")
+@app.post("/embed-image")
+def embed_image(input: ImageInput):
+    image = Image.open(BytesIO(requests.get(input.image_url).content)).convert("RGB")
     inputs = processor(images=image, return_tensors="pt")
     with torch.no_grad():
         features = model.get_image_features(**inputs)
