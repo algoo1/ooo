@@ -1,5 +1,6 @@
+fastapi
+uvicorn
+Pillow
+jina
 torch
-sentence-transformers
-flask
-numpy
-gunicorn
+transformers
