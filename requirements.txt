@@ -1,6 +1,5 @@
 fastapi
 uvicorn
-Pillow
-jina
-torch
 transformers
+torch
+pillow
