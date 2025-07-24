@@ -1,9 +1,7 @@
-# Core dependencies
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
+# RunPod handler
+runpod==1.6.2
 
-# ML dependencies
-torch==2.1.0
+# Core ML (PyTorch already in base image)
 transformers==4.35.0
 tokenizers==0.14.1
 
@@ -11,5 +9,5 @@ tokenizers==0.14.1
 Pillow==10.0.1
 requests==2.31.0
 
-# Optimization
+# Performance optimization
 accelerate==0.24.1
