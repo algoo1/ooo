@@ -4,3 +4,4 @@ transformers==4.40.1
 torch==2.2.2
 pillow
 python-multipart
+numpy<2
