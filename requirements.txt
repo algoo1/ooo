@@ -1,6 +1,15 @@
-fastapi
-uvicorn
-transformers
-torch
-pillow
-requests
+# Core dependencies
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# ML dependencies
+torch==2.1.0
+transformers==4.35.0
+tokenizers==0.14.1
+
+# Image processing
+Pillow==10.0.1
+requests==2.31.0
+
+# Optimization
+accelerate==0.24.1
