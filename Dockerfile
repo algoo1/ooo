@@ -3,7 +3,11 @@ FROM python:3.10-slim
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN apt-get update && apt-get install -y git && pip install --no-cache-dir -r requirements.txt
 
-# Download model weights during build to avoid cold loading at runtime
-RUN python -c "from transformers import
+# 👇 تحميل النموذج أثناء البناء (هام جدًا!)
+RUN python -c "from transformers import CLIPProcessor, CLIPModel; CLIPProcessor.from_pretrained('openai/clip-vit-base-patch32'); CLIPModel.from_pretrained('openai/clip-vit-base-patch32')"
+
+COPY . .
+
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
