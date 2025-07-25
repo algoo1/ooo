@@ -56,7 +56,7 @@ def load_model():
         return False
 
 def handler(job):
-    """معالج RunPod"""
+    """معالج RunPod يدعم الصورة والنص"""
     try:
         logger.info(f"📥 Received job: {job}")
         
@@ -67,44 +67,58 @@ def handler(job):
         # استخراج البيانات
         job_input = job.get("input", {})
         image_url = job_input.get("image_url")
+        text = job_input.get("text") or job_input.get("prompt")
         
-        if not image_url:
-            logger.error("❌ No image_url provided in input. Example: {'input': {'image_url': 'https://...'}}")
-            return {"error": "image_url required in input. Example: {'input': {'image_url': 'https://...'}}"}
-        
-        logger.info(f"🖼️ Processing: {image_url}")
+        results = {}
         start_time = time.time()
         
-        # تحميل الصورة
-        try:
-            response = requests.get(image_url, timeout=15)
-            response.raise_for_status()
-            image = Image.open(BytesIO(response.content)).convert("RGB")
-        except Exception as e:
-            return {"error": f"Image loading failed: {str(e)}"}
+        # معالجة الصورة إذا وجدت
+        if image_url:
+            try:
+                response = requests.get(image_url, timeout=15)
+                response.raise_for_status()
+                image = Image.open(BytesIO(response.content)).convert("RGB")
+            except Exception as e:
+                results["image_error"] = f"Image loading failed: {str(e)}"
+            else:
+                try:
+                    inputs_image = processor(images=image, return_tensors="pt")
+                    if torch.cuda.is_available() and model.device.type == 'cuda':
+                        inputs_image = {k: v.cuda() for k, v in inputs_image.items()}
+                    with torch.no_grad():
+                        features_image = model.get_image_features(**inputs_image)
+                        if features_image.is_cuda:
+                            features_image = features_image.cpu()
+                        embedding_image = features_image[0].tolist()
+                    results["image_embedding"] = embedding_image
+                    results["image_embedding_size"] = len(embedding_image)
+                except Exception as e:
+                    results["image_error"] = f"Image embedding failed: {str(e)}"
         
-        # معالجة الصورة
-        inputs = processor(images=image, return_tensors="pt")
-        
-        if torch.cuda.is_available() and model.device.type == 'cuda':
-            inputs = {k: v.cuda() for k, v in inputs.items()}
-        
-        # استخراج embedding
-        with torch.no_grad():
-            features = model.get_image_features(**inputs)
-            if features.is_cuda:
-                features = features.cpu()
-            embedding = features[0].tolist()
+        # معالجة النص إذا وجد
+        if text:
+            try:
+                inputs_text = processor(text=[text], return_tensors="pt")
+                if torch.cuda.is_available() and model.device.type == 'cuda':
+                    inputs_text = {k: v.cuda() for k, v in inputs_text.items()}
+                with torch.no_grad():
+                    features_text = model.get_text_features(**inputs_text)
+                    if features_text.is_cuda:
+                        features_text = features_text.cpu()
+                    embedding_text = features_text[0].tolist()
+                results["text_embedding"] = embedding_text
+                results["text_embedding_size"] = len(embedding_text)
+            except Exception as e:
+                results["text_error"] = f"Text embedding failed: {str(e)}"
         
         processing_time = time.time() - start_time
-        logger.info(f"✅ Done in {processing_time:.2f}s")
+        results["processing_time"] = round(processing_time, 3)
+        results["status"] = "success" if ("image_embedding" in results or "text_embedding" in results) else "failed"
         
-        return {
-            "embedding": embedding,
-            "processing_time": round(processing_time, 3),
-            "embedding_size": len(embedding),
-            "status": "success"
-        }
+        if not ("image_embedding" in results or "text_embedding" in results):
+            results["error"] = "No valid image_url or text provided in input. Example: {'input': {'image_url': '...', 'text': '...'}}"
+        
+        return results
         
     except Exception as e:
         logger.error(f"❌ Handler error: {str(e)}")
