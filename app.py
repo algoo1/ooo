@@ -2,203 +2,168 @@ import os
 import time
 import torch
 import requests
+import logging
 from io import BytesIO
 from PIL import Image
 from fastapi import FastAPI, HTTPException, Request
 from transformers import CLIPProcessor, CLIPModel
-import logging
-import asyncio
 
-# تكوين الـ logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# إعداد الـ logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="CLIP Image Embedding API")
+# إنشاء التطبيق
+app = FastAPI(title="CLIP Embedding API")
 
-# متغيرات عامة للنموذج (يتم تحميلها مرة واحدة)
+# متغيرات النموذج
 model = None
 processor = None
-model_loaded = False
+model_ready = False
 
-def load_model():
-    """تحميل النموذج مع تحسينات للسرعة"""
-    global model, processor, model_loaded
+def initialize_model():
+    """تحميل النموذج بشكل آمن"""
+    global model, processor, model_ready
     
-    if model_loaded:
-        logger.info("✅ النموذج محمل مسبقاً")
+    if model_ready:
         return True
     
-    start_time = time.time()
-    logger.info("🚀 بدء تحميل نموذج CLIP...")
-    
     try:
-        # تحديد مجلد الـ cache
-        cache_dir = "/app/.cache/huggingface"
+        logger.info("🚀 Loading CLIP model...")
+        start_time = time.time()
+        
+        # تحديد cache directory
+        cache_dir = os.environ.get('TRANSFORMERS_CACHE', '/app/.cache/huggingface')
         os.makedirs(cache_dir, exist_ok=True)
         
-        # تحميل النموذج مع تحسينات
-        logger.info("📥 تحميل النموذج...")
+        # تحميل النموذج
         model = CLIPModel.from_pretrained(
             "openai/clip-vit-base-patch32",
             cache_dir=cache_dir,
-            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-            low_cpu_mem_usage=True
+            torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
         )
         
-        logger.info("📥 تحميل المعالج...")
         processor = CLIPProcessor.from_pretrained(
             "openai/clip-vit-base-patch32",
             cache_dir=cache_dir
         )
         
-        # نقل للـ GPU إذا متوفر
+        # نقل للـ GPU
         if torch.cuda.is_available():
             model = model.cuda()
-            logger.info("🎮 تم نقل النموذج للـ GPU")
+            logger.info("✅ Model loaded on GPU")
         else:
-            logger.info("💻 تشغيل على CPU")
+            logger.info("✅ Model loaded on CPU")
         
-        model_loaded = True
+        model_ready = True
         load_time = time.time() - start_time
-        logger.info(f"✅ تم تحميل النموذج في {load_time:.2f} ثانية")
+        logger.info(f"✅ Model ready in {load_time:.2f}s")
         
         return True
         
     except Exception as e:
-        logger.error(f"❌ خطأ في تحميل النموذج: {str(e)}")
-        model_loaded = False
+        logger.error(f"❌ Model loading failed: {str(e)}")
+        model_ready = False
         return False
 
 @app.on_event("startup")
-async def startup_event():
-    """تحميل النموذج عند بداية التطبيق"""
-    logger.info("🔧 بدء تهيئة التطبيق...")
+async def startup():
+    """تهيئة التطبيق"""
+    logger.info("🔧 Starting application...")
     
-    # تحميل النموذج في background task
-    success = load_model()
-    
+    # محاولة تحميل النموذج
+    success = initialize_model()
     if success:
-        logger.info("🎉 التطبيق جاهز للاستخدام!")
+        logger.info("🎉 Application ready!")
     else:
-        logger.error("💥 فشل في تهيئة التطبيق")
+        logger.error("💥 Startup failed!")
 
 @app.get("/")
 async def root():
-    """الصفحة الرئيسية"""
+    """الصفحة الرئيسية - اختبار سريع"""
     return {
         "status": "running",
-        "message": "CLIP Embedding API",
-        "model_loaded": model_loaded,
-        "gpu_available": torch.cuda.is_available()
+        "model_ready": model_ready,
+        "gpu_available": torch.cuda.is_available(),
+        "message": "CLIP Embedding API is ready!"
     }
 
 @app.get("/health")
-async def health_check():
-    """فحص حالة الخدمة"""
+async def health():
+    """فحص الصحة"""
     return {
-        "status": "healthy" if model_loaded else "loading",
-        "model_loaded": model_loaded,
-        "gpu_available": torch.cuda.is_available(),
-        "memory_usage": torch.cuda.memory_allocated() if torch.cuda.is_available() else "N/A",
-        "timestamp": time.time()
+        "healthy": model_ready,
+        "model_loaded": model is not None,
+        "gpu": torch.cuda.is_available(),
+        "timestamp": int(time.time())
     }
 
 @app.post("/")
 async def embed_image(request: Request):
-    """استخراج الـ embedding من الصورة"""
-    start_time = time.time()
-    
+    """استخراج embedding من الصورة"""
     try:
-        # التحقق من تحميل النموذج
-        if not model_loaded or model is None or processor is None:
-            # محاولة تحميل النموذج إذا لم يكن محملاً
-            logger.info("🔄 محاولة تحميل النموذج...")
-            if not load_model():
-                raise HTTPException(status_code=503, detail="النموذج غير متاح حالياً")
+        # التحقق من جاهزية النموذج
+        if not model_ready:
+            logger.info("🔄 Model not ready, initializing...")
+            if not initialize_model():
+                raise HTTPException(status_code=503, detail="Model not available")
         
-        # قراءة البيانات
-        try:
-            request_data = await request.json()
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"خطأ في قراءة البيانات: {str(e)}")
-        
-        # استخراج رابط الصورة
-        input_data = request_data.get("input", {})
-        image_url = input_data.get("image_url")
+        # قراءة الطلب
+        data = await request.json()
+        image_url = data.get("input", {}).get("image_url")
         
         if not image_url:
-            raise HTTPException(status_code=400, detail="image_url مطلوب في input")
+            raise HTTPException(status_code=400, detail="image_url required")
         
-        logger.info(f"🔄 معالجة الصورة: {image_url}")
+        logger.info(f"🖼️ Processing: {image_url}")
+        start_time = time.time()
         
-        # تحميل الصورة مع timeout
+        # تحميل الصورة
         try:
-            response = requests.get(image_url, timeout=15, stream=True)
+            response = requests.get(image_url, timeout=10)
             response.raise_for_status()
-            
-            # التحقق من نوع المحتوى
-            content_type = response.headers.get('content-type', '')
-            if not content_type.startswith('image/'):
-                raise HTTPException(status_code=400, detail="الرابط لا يحتوي على صورة صالحة")
-            
             image = Image.open(BytesIO(response.content)).convert("RGB")
-            
-        except requests.exceptions.Timeout:
-            raise HTTPException(status_code=408, detail="انتهت مهلة تحميل الصورة")
-        except requests.exceptions.RequestException as e:
-            raise HTTPException(status_code=400, detail=f"خطأ في تحميل الصورة: {str(e)}")
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"خطأ في معالجة الصورة: {str(e)}")
+            raise HTTPException(status_code=400, detail=f"Image loading failed: {str(e)}")
         
         # معالجة الصورة
-        try:
-            inputs = processor(images=image, return_tensors="pt")
-            
-            # نقل البيانات للـ GPU إذا متوفر
-            if torch.cuda.is_available() and model.device.type == 'cuda':
-                inputs = {k: v.cuda() for k, v in inputs.items()}
-            
-            # استخراج الـ features
-            with torch.no_grad():
-                features = model.get_image_features(**inputs)
-                
-                # تحويل لـ CPU إذا كان على GPU
-                if features.is_cuda:
-                    features = features.cpu()
-                
-                embedding = features[0].tolist()
-            
-        except Exception as e:
-            logger.error(f"خطأ في استخراج الـ embedding: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"خطأ في معالجة الصورة: {str(e)}")
+        inputs = processor(images=image, return_tensors="pt")
+        
+        if torch.cuda.is_available() and model.device.type == 'cuda':
+            inputs = {k: v.cuda() for k, v in inputs.items()}
+        
+        # استخراج الـ embedding
+        with torch.no_grad():
+            features = model.get_image_features(**inputs)
+            if features.is_cuda:
+                features = features.cpu()
+            embedding = features[0].tolist()
         
         processing_time = time.time() - start_time
-        logger.info(f"✅ تم استخراج الـ embedding في {processing_time:.2f} ثانية")
+        logger.info(f"✅ Done in {processing_time:.2f}s")
         
         return {
             "embedding": embedding,
             "processing_time": round(processing_time, 3),
-            "embedding_size": len(embedding),
-            "gpu_used": torch.cuda.is_available() and model.device.type == 'cuda'
+            "embedding_size": len(embedding)
         }
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ خطأ غير متوقع: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"خطأ داخلي: {str(e)}")
+        logger.error(f"❌ Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/embed")
-async def embed_image_alt(request: Request):
-    """نسخة بديلة من endpoint الـ embedding"""
-    return await embed_image(request)
-
+# تشغيل مع uvicorn
 if __name__ == "__main__":
     import uvicorn
+    
+    # تحميل النموذج قبل بدء الخادم
+    initialize_model()
+    
     uvicorn.run(
-        app, 
-        host="0.0.0.0", 
+        app,
+        host="0.0.0.0",
         port=8000,
         log_level="info",
-        access_log=True
+        timeout_keep_alive=30
     )
