@@ -75,7 +75,10 @@ def handler(job):
         # معالجة الصورة إذا وجدت
         if image_url:
             try:
-                response = requests.get(image_url, timeout=15)
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (compatible; MyApp/1.0; +https://example.com/)"
+                }
+                response = requests.get(image_url, headers=headers, timeout=15)
                 response.raise_for_status()
                 image = Image.open(BytesIO(response.content)).convert("RGB")
             except Exception as e:
