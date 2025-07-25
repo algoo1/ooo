@@ -69,7 +69,8 @@ def handler(job):
         image_url = job_input.get("image_url")
         
         if not image_url:
-            return {"error": "image_url required"}
+            logger.error("❌ No image_url provided in input. Example: {'input': {'image_url': 'https://...'}}")
+            return {"error": "image_url required in input. Example: {'input': {'image_url': 'https://...'}}"}
         
         logger.info(f"🖼️ Processing: {image_url}")
         start_time = time.time()
