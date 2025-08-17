@@ -10,7 +10,7 @@ services:
       - HF_HOME=/app/.cache/huggingface
       - TORCH_HOME=/app/.cache/torch
       - CLIP_MODEL_ID=openai/clip-vit-base-patch32
-      - PRELOAD_MODEL=1
+      - PRELOAD_MODEL=0
     volumes:
       - ./cache:/app/.cache
     restart: unless-stopped
