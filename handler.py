@@ -1,3 +1,5 @@
+# handler.py
+
 import runpod
 import torch
 import requests
@@ -12,7 +14,7 @@ import os
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# المسار الموحّد للنموذج (يجب أن يطابق Dockerfile)
+# المسار الموحّد للنموذج
 CACHE_DIR = "/app/.cache/huggingface"
 
 model = None
@@ -28,13 +30,11 @@ def load_model():
     try:
         logger.info(f"🚀 بدء تحميل النموذج من {CACHE_DIR}")
         
-        # تحميل النموذج والمعالج
         model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32", cache_dir=CACHE_DIR)
         processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32", cache_dir=CACHE_DIR)
 
         if torch.cuda.is_available():
-            model = model.cuda()
-            model = model.half()  # تقليل الدقة لتوفير الذاكرة
+            model = model.cuda().half()
             logger.info("✅ النموذج تم تحميله على GPU")
         else:
             logger.info("✅ النموذج تم تحميله على CPU")
@@ -56,13 +56,19 @@ def handler(job):
 
         if not image_url and not text:
             return {
-                "error": "يجب توفير image_url أو text على الأقل",
-                "status": "failed"
+                "output": {
+                    "embedding": [],
+                    "error": "يجب توفير image_url أو text على الأقل"
+                }
             }
 
-        # تحميل النموذج إذا لم يتم تحميله
         if not load_model():
-            return {"error": "فشل في تحميل النموذج"}
+            return {
+                "output": {
+                    "embedding": [],
+                    "error": "فشل في تحميل النموذج"
+                }
+            }
 
         results = {}
         start_time = time.time()
@@ -83,14 +89,14 @@ def handler(job):
                     image_features = model.get_image_features(**inputs)
                     if image_features.is_cuda:
                         image_features = image_features.cpu()
-                    results["image_embedding"] = image_features[0].tolist()
-                    results["image_embedding_size"] = image_features.shape[-1]
+                    results["embedding"] = image_features[0].tolist()
+                    results["embedding_size"] = image_features.shape[-1]
 
             except Exception as e:
-                results["image_error"] = str(e)
+                results["error"] = f"فشل تحميل الصورة: {str(e)}"
 
         # معالجة النص
-        if text:
+        elif text:
             try:
                 inputs = processor(text=[text], return_tensors="pt")
                 if torch.cuda.is_available():
@@ -100,21 +106,28 @@ def handler(job):
                     text_features = model.get_text_features(**inputs)
                     if text_features.is_cuda:
                         text_features = text_features.cpu()
-                    results["text_embedding"] = text_features[0].tolist()
-                    results["text_embedding_size"] = text_features.shape[-1]
+                    results["embedding"] = text_features[0].tolist()
+                    results["embedding_size"] = text_features.shape[-1]
 
             except Exception as e:
-                results["text_error"] = str(e)
+                results["error"] = f"فشل معالجة النص: {str(e)}"
 
         # وقت المعالجة
         results["processing_time"] = round(time.time() - start_time, 3)
-        results["status"] = "success"
 
-        return results
+        # إرجاع النتيجة داخل "output" علشان يفهمها الـ Middleware
+        return {
+            "output": results
+        }
 
     except Exception as e:
         logger.error(f"❌ خطأ عام: {str(e)}")
-        return {"error": str(e)}
+        return {
+            "output": {
+                "embedding": [],
+                "error": str(e)
+            }
+        }
 
 
 # بدء الخدمة
