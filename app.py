@@ -90,8 +90,7 @@ def _download_image(url: str) -> Image.Image:
 # -------------------- Startup --------------------
 @app.on_event("startup")
 def _startup():
-    # تحميل مسبق اختياري لتسريع أول طلب
-    preload = os.getenv("PRELOAD_MODEL", "1") == "1"
+    preload = os.getenv("PRELOAD_MODEL", "0") == "1"
     if preload:
         load_model()
 
@@ -159,11 +158,5 @@ def embed(req: EmbedRequest) -> Dict[str, Any]:
 
     results["processing_time"] = round(time.time() - t0, 3)
     results["status"] = "success" if ("image_embedding" in results or "text_embedding" in results) else "failed"
-
-    if results["status"] == "failed" and "image_error" not in results and "text_error" not in results:
-        raise HTTPException(
-            status_code=400,
-            detail="No valid inputs processed. Check your image_url/text.",
-        )
 
     return results
