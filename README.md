@@ -1,29 +1,18 @@
 # CLIP Image Embedding API
 
-🚀 Fast and optimized CLIP image embedding API built for RunPod serverless deployment.
+Fast, GPU-accelerated CLIP embeddings API (HTTP) with FastAPI + Uvicorn.  
+Works locally (Docker) or on RunPod (Container Image endpoint).
 
 ## Features
+- ⚡ Fast cold start (preloads model on startup)
+- 🧠 `openai/clip-vit-base-patch32`
+- 🛡️ Clear errors (400 only for bad input)
+- 🩺 `/health` endpoint for healthchecks
+- 📦 Dockerfile pre-downloads model into image cache
+- 🔁 Compatible with CPU/GPU
 
-- ⚡ **Ultra-fast cold start** (< 10 seconds)
-- 🎮 **GPU acceleration** support
-- 🛡️ **Robust error handling** 
-- 📊 **Health monitoring** endpoints
-- 🔄 **Model pre-loading** in Docker image
-- 📝 **Detailed logging** for debugging
-
-## Quick Deploy to RunPod
-
-### Method 1: Direct GitHub Integration
-
-1. **Create RunPod Endpoint**
-   - Go to RunPod → Endpoints → New Endpoint
-   - Choose "Container Image" 
-   - Set Repository: `https://github.com/YOUR_USERNAME/clip-embedding-api`
-   - Container Start Command: `python app.py`
-
-### Method 2: Pre-built Docker Image
+## Run (Docker Compose)
 
 ```bash
-# Build and push to Docker Hub
-docker build -t your-username/clip-embedding-api .
-docker push your-username/clip-embedding-api
+docker compose up --build
+# API at http://localhost:8000
